@@ -19,6 +19,9 @@ type DNSLoop interface {
 	ApplyStatus(ctx context.Context, status models.LoopStatus) (
 		outcome string, err error)
 	GetStatus() (status models.LoopStatus)
+	// MatchesHostResolverDomain returns true if the provided qname would be
+	// handled by the host resolver according to the configured DNS_HOST_RESOLVER_DOMAINS.
+	MatchesHostResolverDomain(name string) bool
 }
 
 type PortForwarding interface {

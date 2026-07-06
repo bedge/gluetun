@@ -35,6 +35,26 @@ func (h *dnsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			errMethodNotSupported(w, r.Method)
 		}
+	case "/match":
+		switch r.Method {
+		case http.MethodGet:
+			// query param: ?name=example.com
+			name := r.URL.Query().Get("name")
+			if name == "" {
+				h.warner.Warn("dns match: missing name query parameter")
+				http.Error(w, "missing 'name' query parameter", http.StatusBadRequest)
+				return
+			}
+			matched := h.loop.MatchesHostResolverDomain(name)
+			encoder := json.NewEncoder(w)
+			if err := encoder.Encode(map[string]bool{"match": matched}); err != nil {
+				h.warner.Warn(err.Error())
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		default:
+			errMethodNotSupported(w, r.Method)
+		}
 	default:
 		errRouteNotSupported(w, r.RequestURI)
 	}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/qdm12/dns/v2/pkg/middlewares/filter/mapfilter"
@@ -35,6 +37,8 @@ type Loop struct {
 	backoffTime    time.Duration
 	timeNow        func() time.Time
 	timeSince      func(time.Time) time.Duration
+	// MVP: parsed domains that should use the host resolver
+	hostResolverDomains []string
 }
 
 const defaultBackoffTime = 10 * time.Second
@@ -58,6 +62,23 @@ func NewLoop(settings settings.DNS,
 		return nil, fmt.Errorf("creating map filter: %w", err)
 	}
 
+	// Parse MVP environment variable DNS_HOST_RESOLVER_DOMAINS at startup
+	raw := os.Getenv("DNS_HOST_RESOLVER_DOMAINS")	// comma separated
+	domains := make([]string, 0)
+	if raw != "" {
+		for _, d := range strings.Split(raw, ",") {
+			d = strings.ToLower(strings.TrimSpace(d))
+			if d == "" {
+				continue
+			}
+			// normalize by stripping trailing dot
+			d = strings.TrimSuffix(d, ".")
+			if d != "" {
+				domains = append(domains, d)
+			}
+		}
+	}
+
 	return &Loop{
 		statusManager: statusManager,
 		state:         state,
@@ -76,6 +97,7 @@ func NewLoop(settings settings.DNS,
 		backoffTime:   defaultBackoffTime,
 		timeNow:       time.Now,
 		timeSince:     time.Since,
+		hostResolverDomains: domains,
 	}, nil
 }
 
@@ -117,4 +139,17 @@ func (l *filterLogger) Log(msg string) {
 
 func buildFilterLogger(logger Logger) *filterLogger {
 	return &filterLogger{logger: logger}
+}
+
+// MatchesHostResolverDomain returns true if the provided qname matches any of the
+// domains configured in DNS_HOST_RESOLVER_DOMAINS. Matching is normalized and
+// supports suffix matching (e.g. "cluster.local" matches "some.cluster.local").
+func (l *Loop) MatchesHostResolverDomain(qname string) bool {
+	n := strings.ToLower(strings.TrimSuffix(qname, "."))
+	for _, d := range l.hostResolverDomains {
+		if n == d || strings.HasSuffix(n, "."+d) {
+			return true
+		}
+	}
+	return false
 }
